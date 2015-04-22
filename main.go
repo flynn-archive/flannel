@@ -1,10 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -36,6 +38,7 @@ type CmdLineOpts struct {
 	ipMasq        bool
 	subnetFile    string
 	iface         string
+	notifyURL     string
 }
 
 var opts CmdLineOpts
@@ -47,6 +50,7 @@ func init() {
 	flag.StringVar(&opts.etcdCertfile, "etcd-certfile", "", "SSL certification file used to secure etcd communication")
 	flag.StringVar(&opts.etcdCAFile, "etcd-cafile", "", "SSL Certificate Authority file used to secure etcd communication")
 	flag.StringVar(&opts.subnetFile, "subnet-file", "/run/flannel/subnet.env", "filename where env variables (subnet and MTU values) will be written to")
+	flag.StringVar(&opts.notifyURL, "notify-url", "", "URL to send webhook after starting")
 	flag.StringVar(&opts.iface, "iface", "", "interface to use (IP or name) for inter-host communication")
 	flag.BoolVar(&opts.ipMasq, "ip-masq", false, "setup IP masquerade rule for traffic destined outside of overlay network")
 	flag.BoolVar(&opts.help, "help", false, "print this message")
@@ -100,6 +104,23 @@ func writeSubnetFile(sn *backend.SubnetDef) error {
 	// rename(2) the temporary file to the desired location so that it becomes
 	// atomically visible with the contents
 	return os.Rename(tempFile, opts.subnetFile)
+}
+
+func notifyWebhook(sn *backend.SubnetDef) error {
+	if opts.notifyURL == "" {
+		return nil
+	}
+	data := struct {
+		Subnet string `json:"subnet"`
+		MTU    int    `json:"mtu"`
+	}{sn.Net.String(), sn.MTU}
+	payload, _ := json.Marshal(data)
+	res, err := http.Post(opts.notifyURL, "application/json", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	res.Body.Close()
+	return nil
 }
 
 func lookupIface() (*net.Interface, net.IP, error) {
@@ -217,6 +238,7 @@ func run(be backend.Backend, exit chan int) {
 	}
 
 	writeSubnetFile(sn)
+	notifyWebhook(sn)
 	daemon.SdNotify("READY=1")
 
 	log.Infof("%s mode initialized", be.Name())
