@@ -181,9 +181,15 @@ func (vb *VXLANBackend) handleSubnetEvents(batch subnet.EventBatch) {
 				continue
 			}
 
-			vb.dev.AddL2(neigh{IP: evt.Lease.Attrs.PublicIP, MAC: net.HardwareAddr(attrs.VtepMAC)})
-			vb.dev.AddL3(neigh{IP: evt.Lease.Network.IP, MAC: net.HardwareAddr(attrs.VtepMAC)})
-			vb.dev.AddRoute(evt.Lease.Network)
+			if err := vb.dev.AddL2(neigh{IP: evt.Lease.Attrs.PublicIP, MAC: net.HardwareAddr(attrs.VtepMAC)}); err != nil {
+				log.Error("Error adding L2 entry:", err)
+			}
+			if err := vb.dev.AddL3(neigh{IP: evt.Lease.Network.IP, MAC: net.HardwareAddr(attrs.VtepMAC)}); err != nil {
+				log.Error("Error adding L3 entry:", err)
+			}
+			if err := vb.dev.AddRoute(evt.Lease.Network); err != nil {
+				log.Error("Error adding route:", err)
+			}
 
 		case subnet.SubnetRemoved:
 			log.Info("Subnet removed: ", evt.Lease.Network)
@@ -199,10 +205,16 @@ func (vb *VXLANBackend) handleSubnetEvents(batch subnet.EventBatch) {
 				continue
 			}
 
-			vb.dev.DelRoute(evt.Lease.Network)
+			if err := vb.dev.DelRoute(evt.Lease.Network); err != nil {
+				log.Error("Error deleting route:", err)
+			}
 			if len(attrs.VtepMAC) > 0 {
-				vb.dev.DelL2(neigh{IP: evt.Lease.Attrs.PublicIP, MAC: net.HardwareAddr(attrs.VtepMAC)})
-				vb.dev.DelL3(neigh{IP: evt.Lease.Network.IP, MAC: net.HardwareAddr(attrs.VtepMAC)})
+				if err := vb.dev.DelL2(neigh{IP: evt.Lease.Attrs.PublicIP, MAC: net.HardwareAddr(attrs.VtepMAC)}); err != nil {
+					log.Error("Error deleting L2 entry:", err)
+				}
+				if err := vb.dev.DelL3(neigh{IP: evt.Lease.Network.IP, MAC: net.HardwareAddr(attrs.VtepMAC)}); err != nil {
+					log.Error("Error deleting L3 entry:", err)
+				}
 			}
 
 		default:
