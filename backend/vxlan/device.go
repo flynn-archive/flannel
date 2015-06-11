@@ -99,7 +99,9 @@ func ensureLink(vxlan *netlink.Vxlan) (*netlink.Vxlan, error) {
 }
 
 func (dev *vxlanDevice) Configure(ipn ip.IP4Net) error {
-	setAddr4(dev.link, ipn.ToIPNet())
+	if err := setAddr4(dev.link, ipn.ToIPNet()); err != nil {
+		return err
+	}
 
 	if err := netlink.LinkSetUp(dev.link); err != nil {
 		return fmt.Errorf("failed to set interface %s to UP state: %s", dev.link.Attrs().Name, err)
