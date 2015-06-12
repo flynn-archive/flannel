@@ -250,15 +250,22 @@ func setAddr4(link *netlink.Vxlan, ipn *net.IPNet) error {
 		return err
 	}
 
-	for _, addr := range addrs {
-		if err = netlink.AddrDel(link, &addr); err != nil {
-			return fmt.Errorf("failed to delete IPv4 addr %s from %s", addr.String(), link.Attrs().Name)
+	addr := netlink.Addr{ipn, ""}
+	existing := false
+	for _, old := range addrs {
+		if old.IPNet.String() == addr.IPNet.String() {
+			existing = true
+			continue
+		}
+		if err = netlink.AddrDel(link, &old); err != nil {
+			return fmt.Errorf("failed to delete IPv4 addr %s from %s", old.String(), link.Attrs().Name)
 		}
 	}
 
-	addr := netlink.Addr{ipn, ""}
-	if err = netlink.AddrAdd(link, &addr); err != nil {
-		return fmt.Errorf("failed to add IP address %s to %s: %s", ipn.String(), link.Attrs().Name, err)
+	if !existing {
+		if err = netlink.AddrAdd(link, &addr); err != nil {
+			return fmt.Errorf("failed to add IP address %s to %s: %s", ipn.String(), link.Attrs().Name, err)
+		}
 	}
 
 	return nil
