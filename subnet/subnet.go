@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/coreos/flannel/Godeps/_workspace/src/github.com/coreos/go-etcd/etcd"
-	log "github.com/coreos/flannel/Godeps/_workspace/src/github.com/golang/glog"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/coreos/go-etcd/etcd"
+	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
 
-	"github.com/coreos/flannel/pkg/ip"
-	"github.com/coreos/flannel/pkg/task"
+	"github.com/flynn/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/task"
 )
 
 const (

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"net"
 
-	"github.com/coreos/flannel/backend"
-	"github.com/coreos/flannel/pkg/ip"
-	"github.com/coreos/flannel/pkg/task"
-	"github.com/coreos/flannel/subnet"
+	"github.com/flynn/flannel/backend"
+	"github.com/flynn/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/task"
+	"github.com/flynn/flannel/subnet"
 )
 
 type AllocBackend struct {

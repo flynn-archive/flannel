@@ -9,9 +9,9 @@ import (
 	"reflect"
 	"unsafe"
 
-	log "github.com/coreos/flannel/Godeps/_workspace/src/github.com/golang/glog"
+	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
 
-	"github.com/coreos/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/ip"
 )
 
 func runCProxy(tun *os.File, conn *net.UDPConn, ctl *os.File, tunIP ip.IP4, tunMTU int) {
