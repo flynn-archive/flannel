@@ -1,6 +1,7 @@
 package subnet
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	"sync"
@@ -10,12 +11,24 @@ import (
 	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
 )
 
+var (
+	ErrSubnetExists          = errors.New("subnet exists")
+	ErrEtcdEventIndexCleared = errors.New("event index cleared")
+)
+
+type Response struct {
+	Subnets    map[string][]byte
+	Index      uint64
+	Expiration *time.Time
+	Action     string
+}
+
 type subnetRegistry interface {
-	getConfig() (*etcd.Response, error)
-	getSubnets() (*etcd.Response, error)
-	createSubnet(sn, data string, ttl uint64) (*etcd.Response, error)
-	updateSubnet(sn, data string, ttl uint64) (*etcd.Response, error)
-	watchSubnets(since uint64, stop chan bool) (*etcd.Response, error)
+	GetConfig() ([]byte, error)
+	GetSubnets() (*Response, error)
+	CreateSubnet(sn, data string, ttl uint64) (*Response, error)
+	UpdateSubnet(sn, data string, ttl uint64) (*Response, error)
+	WatchSubnets(since uint64, stop chan bool) (*Response, error)
 }
 
 type EtcdConfig struct {
@@ -54,47 +67,70 @@ func newEtcdSubnetRegistry(config *EtcdConfig) (subnetRegistry, error) {
 	return r, nil
 }
 
-func (esr *etcdSubnetRegistry) getConfig() (*etcd.Response, error) {
+func (esr *etcdSubnetRegistry) GetConfig() ([]byte, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "config")
 	resp, err := esr.client().Get(key, false, false)
 	if err != nil {
 		return nil, err
 	}
-	return resp, nil
+	return []byte(resp.Node.Value), nil
 }
 
-func (esr *etcdSubnetRegistry) getSubnets() (*etcd.Response, error) {
+func (esr *etcdSubnetRegistry) GetSubnets() (*Response, error) {
+	res := &Response{Subnets: make(map[string][]byte)}
+
 	key := path.Join(esr.etcdCfg.Prefix, "subnets")
-	return esr.client().Get(key, false, true)
+	r, err := esr.client().Get(key, false, true)
+	if err != nil {
+		if e, ok := err.(*etcd.EtcdError); ok && e.ErrorCode == etcdKeyNotFound {
+			// key not found: treat it as empty set
+			res.Index = e.Index
+			return res, nil
+		}
+		return nil, err
+	}
+	for _, node := range r.Node.Nodes {
+		res.Subnets[node.Key] = []byte(node.Value)
+	}
+	res.Index = r.EtcdIndex
+	return res, nil
 }
 
-func (esr *etcdSubnetRegistry) createSubnet(sn, data string, ttl uint64) (*etcd.Response, error) {
+func (esr *etcdSubnetRegistry) CreateSubnet(sn, data string, ttl uint64) (*Response, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "subnets", sn)
 	resp, err := esr.client().Create(key, data, ttl)
 	if err != nil {
+		// if etcd returned Key Already Exists, try again.
+		if e, ok := err.(*etcd.EtcdError); ok && e.ErrorCode == etcdKeyAlreadyExists {
+			return nil, ErrSubnetExists
+		}
 		return nil, err
 	}
-
 	ensureExpiration(resp, ttl)
-	return resp, nil
+	return &Response{Index: resp.EtcdIndex, Expiration: resp.Node.Expiration}, nil
 }
 
-func (esr *etcdSubnetRegistry) updateSubnet(sn, data string, ttl uint64) (*etcd.Response, error) {
+func (esr *etcdSubnetRegistry) UpdateSubnet(sn, data string, ttl uint64) (*Response, error) {
 	key := path.Join(esr.etcdCfg.Prefix, "subnets", sn)
 	resp, err := esr.client().Set(key, data, ttl)
 	if err != nil {
 		return nil, err
 	}
-
 	ensureExpiration(resp, ttl)
-	return resp, nil
+	return &Response{Index: resp.EtcdIndex, Expiration: resp.Node.Expiration}, nil
 }
 
-func (esr *etcdSubnetRegistry) watchSubnets(since uint64, stop chan bool) (*etcd.Response, error) {
+func (esr *etcdSubnetRegistry) WatchSubnets(since uint64, stop chan bool) (res *Response, err error) {
+	res = &Response{Subnets: make(map[string][]byte)}
+	defer func() {
+		if e, ok := err.(*etcd.EtcdError); ok && e.ErrorCode == etcdEventIndexCleared {
+			err = ErrEtcdEventIndexCleared
+		}
+	}()
+
 	for {
 		key := path.Join(esr.etcdCfg.Prefix, "subnets")
-		resp, err := esr.client().RawWatch(key, since, true, nil, stop)
-
+		raw, err := esr.client().RawWatch(key, since, true, nil, stop)
 		if err != nil {
 			if err == etcd.ErrWatchStoppedByUser {
 				return nil, nil
@@ -103,14 +139,23 @@ func (esr *etcdSubnetRegistry) watchSubnets(since uint64, stop chan bool) (*etcd
 			}
 		}
 
-		if len(resp.Body) == 0 {
+		if len(raw.Body) == 0 {
 			// etcd timed out, go back but recreate the client as the underlying
 			// http transport gets hosed (http://code.google.com/p/go/issues/detail?id=8648)
 			esr.resetClient()
 			continue
 		}
 
-		return resp.Unmarshal()
+		r, err := raw.Unmarshal()
+		if err != nil {
+			return nil, err
+		}
+		for _, node := range r.Node.Nodes {
+			res.Subnets[node.Key] = []byte(node.Value)
+		}
+		res.Index = r.Node.ModifiedIndex
+		res.Action = r.Action
+		return res, nil
 	}
 }
 
