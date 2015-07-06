@@ -49,7 +49,7 @@ type SubnetLease struct {
 }
 
 type SubnetManager struct {
-	registry  subnetRegistry
+	registry  Registry
 	config    *Config
 	myLease   SubnetLease
 	leaseExp  time.Time
@@ -66,12 +66,23 @@ type Event struct {
 
 type EventBatch []Event
 
-func NewSubnetManager(config *EtcdConfig) (*SubnetManager, error) {
-	esr, err := newEtcdSubnetRegistry(config)
+func NewSubnetManager(r Registry) (*SubnetManager, error) {
+	config, err := r.GetConfig()
 	if err != nil {
 		return nil, err
 	}
-	return newSubnetManager(esr)
+
+	c, err := ParseConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	sm := SubnetManager{
+		registry: r,
+		config:   c,
+	}
+
+	return &sm, nil
 }
 
 func (sm *SubnetManager) AcquireLease(attrs *LeaseAttrs, cancel chan bool) (ip.IP4Net, error) {
@@ -191,25 +202,6 @@ func parseSubnetKey(s string) (ip.IP4Net, error) {
 	}
 
 	return ip.IP4Net{}, errors.New("Error parsing IP Subnet")
-}
-
-func newSubnetManager(r subnetRegistry) (*SubnetManager, error) {
-	config, err := r.GetConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	c, err := ParseConfig(config)
-	if err != nil {
-		return nil, err
-	}
-
-	sm := SubnetManager{
-		registry: r,
-		config:   c,
-	}
-
-	return &sm, nil
 }
 
 func (sm *SubnetManager) getLeases() ([]SubnetLease, error) {

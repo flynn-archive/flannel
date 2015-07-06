@@ -23,7 +23,7 @@ type Response struct {
 	Action     string
 }
 
-type subnetRegistry interface {
+type Registry interface {
 	GetConfig() ([]byte, error)
 	GetSubnets() (*Response, error)
 	CreateSubnet(sn, data string, ttl uint64) (*Response, error)
@@ -53,7 +53,7 @@ func newEtcdClient(c *EtcdConfig) (*etcd.Client, error) {
 	}
 }
 
-func newEtcdSubnetRegistry(config *EtcdConfig) (subnetRegistry, error) {
+func NewEtcdSubnetRegistry(config *EtcdConfig) (Registry, error) {
 	r := &etcdSubnetRegistry{
 		etcdCfg: config,
 	}

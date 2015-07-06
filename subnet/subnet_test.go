@@ -136,7 +136,7 @@ func (msr *mockSubnetRegistry) hasSubnet(sn string) bool {
 
 func TestAcquireLease(t *testing.T) {
 	msr := newMockSubnetRegistry(0)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %s", err)
 	}
@@ -168,7 +168,7 @@ func TestAcquireLease(t *testing.T) {
 
 func TestWatchLeaseAdded(t *testing.T) {
 	msr := newMockSubnetRegistry(0)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %s", err)
 	}
@@ -205,7 +205,7 @@ func TestWatchLeaseAdded(t *testing.T) {
 
 func TestWatchLeaseRemoved(t *testing.T) {
 	msr := newMockSubnetRegistry(0)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %s", err)
 	}
@@ -246,7 +246,7 @@ type leaseData struct {
 
 func TestRenewLease(t *testing.T) {
 	msr := newMockSubnetRegistry(1)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %v", err)
 	}

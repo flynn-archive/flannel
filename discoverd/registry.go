@@ -25,7 +25,7 @@ type registry struct {
 	events  chan *discoverd.Event
 }
 
-func newRegistry(client *discoverd.Client, serviceName string) (*registry, error) {
+func NewRegistry(client *discoverd.Client, serviceName string) (subnet.Registry, error) {
 	service := client.Service(serviceName)
 	events := make(chan *discoverd.Event)
 	_, err := service.Watch(events)

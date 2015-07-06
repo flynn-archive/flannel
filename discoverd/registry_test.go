@@ -17,7 +17,7 @@ type test struct {
 	client   *discoverd.Client
 	service  discoverd.Service
 	events   chan *discoverd.Event
-	registry *registry
+	registry subnet.Registry
 
 	cleanup func()
 }
@@ -50,7 +50,7 @@ func newTest(t *testing.T) (s *test) {
 		t.Errorf("error setting meta: %s", err)
 	}
 
-	registry, err := newRegistry(client, serviceName)
+	registry, err := NewRegistry(client, serviceName)
 	if err != nil {
 		t.Errorf("error creating registry: %s", err)
 	}

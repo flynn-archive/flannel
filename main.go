@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/coreos/go-systemd/daemon"
+	disc "github.com/flynn/flannel/Godeps/_workspace/src/github.com/flynn/flynn/discoverd/client"
 	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
 
 	"github.com/flynn/flannel/backend"
@@ -22,6 +23,7 @@ import (
 	"github.com/flynn/flannel/backend/hostgw"
 	"github.com/flynn/flannel/backend/udp"
 	"github.com/flynn/flannel/backend/vxlan"
+	"github.com/flynn/flannel/discoverd"
 	"github.com/flynn/flannel/pkg/ip"
 	"github.com/flynn/flannel/pkg/task"
 	"github.com/flynn/flannel/subnet"
@@ -39,6 +41,7 @@ type CmdLineOpts struct {
 	subnetFile    string
 	iface         string
 	notifyURL     string
+	discoverdURL  string
 }
 
 var opts CmdLineOpts
@@ -51,6 +54,7 @@ func init() {
 	flag.StringVar(&opts.etcdCAFile, "etcd-cafile", "", "SSL Certificate Authority file used to secure etcd communication")
 	flag.StringVar(&opts.subnetFile, "subnet-file", "/run/flannel/subnet.env", "filename where env variables (subnet and MTU values) will be written to")
 	flag.StringVar(&opts.notifyURL, "notify-url", "", "URL to send webhook after starting")
+	flag.StringVar(&opts.discoverdURL, "discoverd-url", "", "URL of discoverd registry")
 	flag.StringVar(&opts.iface, "iface", "", "interface to use (IP or name) for inter-host communication")
 	flag.BoolVar(&opts.ipMasq, "ip-masq", false, "setup IP masquerade rule for traffic destined outside of overlay network")
 	flag.BoolVar(&opts.help, "help", false, "print this message")
@@ -158,18 +162,34 @@ func lookupIface() (*net.Interface, net.IP, error) {
 }
 
 func makeSubnetManager() *subnet.SubnetManager {
-	peers := strings.Split(opts.etcdEndpoints, ",")
-
-	cfg := &subnet.EtcdConfig{
-		Endpoints: peers,
-		Keyfile:   opts.etcdKeyfile,
-		Certfile:  opts.etcdCertfile,
-		CAFile:    opts.etcdCAFile,
-		Prefix:    opts.etcdPrefix,
+	var registryFn func() (subnet.Registry, error)
+	if opts.discoverdURL != "" {
+		client := disc.NewClientWithURL(opts.discoverdURL)
+		registryFn = func() (subnet.Registry, error) {
+			return discoverd.NewRegistry(client, "flannel")
+		}
+	} else {
+		cfg := &subnet.EtcdConfig{
+			Endpoints: strings.Split(opts.etcdEndpoints, ","),
+			Keyfile:   opts.etcdKeyfile,
+			Certfile:  opts.etcdCertfile,
+			CAFile:    opts.etcdCAFile,
+			Prefix:    opts.etcdPrefix,
+		}
+		registryFn = func() (subnet.Registry, error) {
+			return subnet.NewEtcdSubnetRegistry(cfg)
+		}
 	}
 
 	for {
-		sm, err := subnet.NewSubnetManager(cfg)
+		reg, err := registryFn()
+		if err != nil {
+			log.Error("Failed to create subnet registry: ", err)
+			time.Sleep(time.Second)
+			continue
+		}
+
+		sm, err := subnet.NewSubnetManager(reg)
 		if err == nil {
 			return sm
 		}
