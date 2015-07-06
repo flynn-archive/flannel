@@ -5,10 +5,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/flynn/flynn/discoverd/client"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/flynn/flynn/discoverd/testutil"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/flynn/flynn/discoverd/testutil/etcdrunner"
 	"github.com/flynn/flannel/subnet"
-	"github.com/flynn/flynn/discoverd/client"
-	"github.com/flynn/flynn/discoverd/testutil"
-	"github.com/flynn/flynn/discoverd/testutil/etcdrunner"
 )
 
 type test struct {
