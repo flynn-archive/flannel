@@ -6,7 +6,7 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/coreos/flannel/Godeps/_workspace/src/github.com/vishvananda/netlink/nl"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/vishvananda/netlink/nl"
 )
 
 // AddrAdd will add an IP address to a link device.

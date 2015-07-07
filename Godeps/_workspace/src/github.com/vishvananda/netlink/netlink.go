@@ -11,7 +11,7 @@ package netlink
 import (
 	"net"
 
-	"github.com/coreos/flannel/Godeps/_workspace/src/github.com/vishvananda/netlink/nl"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/vishvananda/netlink/nl"
 )
 
 const (

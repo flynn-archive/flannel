@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/coreos/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/ip"
 )
 
 type Config struct {
@@ -15,9 +15,9 @@ type Config struct {
 	Backend   json.RawMessage
 }
 
-func ParseConfig(s string) (*Config, error) {
+func ParseConfig(data []byte) (*Config, error) {
 	cfg := new(Config)
-	err := json.Unmarshal([]byte(s), cfg)
+	err := json.Unmarshal(data, cfg)
 	if err != nil {
 		return nil, err
 	}

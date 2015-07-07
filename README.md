@@ -24,7 +24,7 @@ overlay network:
 ## Building flannel
 
 * Step 1: Make sure you have Linux headers installed on your machine. On Ubuntu, run ```sudo apt-get install linux-libc-dev```. On Fedora/Redhat, run ```sudo yum install kernel-headers```.
-* Step 2: Git clone the flannel repo: ```https://github.com/coreos/flannel.git```
+* Step 2: Git clone the flannel repo: ```https://github.com/flynn/flannel.git```
 * Step 3: Run the build script: ```cd flannel; ./build```
 
 ### Building in a Docker container

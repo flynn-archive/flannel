@@ -7,13 +7,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/coreos/flannel/Godeps/_workspace/src/github.com/coreos/go-etcd/etcd"
-
-	"github.com/coreos/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/ip"
 )
 
+type testSubnet struct {
+	attrs      []byte
+	index      uint64
+	expiration *time.Time
+}
+
 type mockSubnetRegistry struct {
-	subnets *etcd.Node
+	subnets map[string]*testSubnet
 	addCh   chan string
 	delCh   chan string
 	index   uint64
@@ -21,16 +25,12 @@ type mockSubnetRegistry struct {
 }
 
 func newMockSubnetRegistry(ttlOverride uint64) *mockSubnetRegistry {
-	subnodes := []*etcd.Node{
-		{Key: "10.3.1.0-24", Value: `{ "PublicIP": "1.1.1.1" }`, ModifiedIndex: 10},
-		{Key: "10.3.2.0-24", Value: `{ "PublicIP": "1.1.1.1" }`, ModifiedIndex: 11},
-		{Key: "10.3.4.0-24", Value: `{ "PublicIP": "1.1.1.1" }`, ModifiedIndex: 12},
-		{Key: "10.3.5.0-24", Value: `{ "PublicIP": "1.1.1.1" }`, ModifiedIndex: 13},
-	}
-
 	return &mockSubnetRegistry{
-		subnets: &etcd.Node{
-			Nodes: subnodes,
+		subnets: map[string]*testSubnet{
+			"10.3.1.0-24": &testSubnet{attrs: []byte(`{ "PublicIP": "1.1.1.1" }`), index: 10},
+			"10.3.2.0-24": &testSubnet{attrs: []byte(`{ "PublicIP": "1.1.1.1" }`), index: 11},
+			"10.3.4.0-24": &testSubnet{attrs: []byte(`{ "PublicIP": "1.1.1.1" }`), index: 12},
+			"10.3.5.0-24": &testSubnet{attrs: []byte(`{ "PublicIP": "1.1.1.1" }`), index: 13},
 		},
 		addCh: make(chan string),
 		delCh: make(chan string),
@@ -39,63 +39,54 @@ func newMockSubnetRegistry(ttlOverride uint64) *mockSubnetRegistry {
 	}
 }
 
-func (msr *mockSubnetRegistry) getConfig() (*etcd.Response, error) {
-	return &etcd.Response{
-		EtcdIndex: msr.index,
-		Node: &etcd.Node{
-			Value: `{ "Network": "10.3.0.0/16", "SubnetMin": "10.3.1.0", "SubnetMax": "10.3.5.0" }`,
-		},
-	}, nil
+func (msr *mockSubnetRegistry) GetConfig() ([]byte, error) {
+	return []byte(`{ "Network": "10.3.0.0/16", "SubnetMin": "10.3.1.0", "SubnetMax": "10.3.5.0" }`), nil
 }
 
-func (msr *mockSubnetRegistry) getSubnets() (*etcd.Response, error) {
-	return &etcd.Response{
-		Node:      msr.subnets,
-		EtcdIndex: msr.index,
-	}, nil
+func (msr *mockSubnetRegistry) GetSubnets() (*Response, error) {
+	res := &Response{
+		Subnets: make(map[string][]byte, len(msr.subnets)),
+		Index:   msr.index,
+	}
+	for subnet, t := range msr.subnets {
+		res.Subnets[subnet] = t.attrs
+	}
+	return res, nil
 }
 
-func (msr *mockSubnetRegistry) createSubnet(sn, data string, ttl uint64) (*etcd.Response, error) {
+func (msr *mockSubnetRegistry) CreateSubnet(sn, data string, ttl uint64) (*Response, error) {
 	msr.index += 1
 
 	if msr.ttl > 0 {
 		ttl = msr.ttl
 	}
 
+	msr.subnets[sn] = &testSubnet{attrs: []byte(data), index: msr.index}
+
 	// add squared durations :)
 	exp := time.Now().Add(time.Duration(ttl) * time.Second)
 
-	node := &etcd.Node{
-		Key:           sn,
-		Value:         data,
-		ModifiedIndex: msr.index,
-		Expiration:    &exp,
-	}
-
-	msr.subnets.Nodes = append(msr.subnets.Nodes, node)
-
-	return &etcd.Response{
-		Node:      node,
-		EtcdIndex: msr.index,
+	return &Response{
+		Index:      msr.index,
+		Expiration: &exp,
 	}, nil
 }
 
-func (msr *mockSubnetRegistry) updateSubnet(sn, data string, ttl uint64) (*etcd.Response, error) {
-
+func (msr *mockSubnetRegistry) UpdateSubnet(sn, data string, ttl uint64) (*Response, error) {
 	msr.index += 1
 
 	// add squared durations :)
 	exp := time.Now().Add(time.Duration(ttl) * time.Second)
 
-	for _, n := range msr.subnets.Nodes {
-		if n.Key == sn {
-			n.Value = data
-			n.ModifiedIndex = msr.index
-			n.Expiration = &exp
+	for subnet, t := range msr.subnets {
+		if subnet == sn {
+			t.attrs = []byte(data)
+			t.index = msr.index
+			t.expiration = &exp
 
-			return &etcd.Response{
-				Node:      n,
-				EtcdIndex: msr.index,
+			return &Response{
+				Index:      msr.index,
+				Expiration: &exp,
 			}, nil
 		}
 	}
@@ -104,7 +95,7 @@ func (msr *mockSubnetRegistry) updateSubnet(sn, data string, ttl uint64) (*etcd.
 
 }
 
-func (msr *mockSubnetRegistry) watchSubnets(since uint64, stop chan bool) (*etcd.Response, error) {
+func (msr *mockSubnetRegistry) WatchSubnets(since uint64, stop chan bool) (*Response, error) {
 	var sn string
 
 	select {
@@ -112,25 +103,25 @@ func (msr *mockSubnetRegistry) watchSubnets(since uint64, stop chan bool) (*etcd
 		return nil, nil
 
 	case sn = <-msr.addCh:
-		n := etcd.Node{
-			Key:           sn,
-			Value:         `{"PublicIP": "1.1.1.1"}`,
-			ModifiedIndex: msr.index,
+		t := &testSubnet{
+			attrs: []byte(`{"PublicIP": "1.1.1.1"}`),
+			index: msr.index,
 		}
-		msr.subnets.Nodes = append(msr.subnets.Nodes, &n)
-		return &etcd.Response{
-			Action: "add",
-			Node:   &n,
+		msr.subnets[sn] = t
+		return &Response{
+			Subnets: map[string][]byte{sn: t.attrs},
+			Action:  "add",
+			Index:   msr.index,
 		}, nil
 
 	case sn = <-msr.delCh:
-		for i, n := range msr.subnets.Nodes {
-			if n.Key == sn {
-				msr.subnets.Nodes[i] = msr.subnets.Nodes[len(msr.subnets.Nodes)-1]
-				msr.subnets.Nodes = msr.subnets.Nodes[:len(msr.subnets.Nodes)-2]
-				return &etcd.Response{
-					Action: "expire",
-					Node:   n,
+		for subnet, t := range msr.subnets {
+			if subnet == sn {
+				delete(msr.subnets, subnet)
+				return &Response{
+					Subnets: map[string][]byte{subnet: t.attrs},
+					Action:  "expire",
+					Index:   msr.index,
 				}, nil
 			}
 		}
@@ -139,17 +130,13 @@ func (msr *mockSubnetRegistry) watchSubnets(since uint64, stop chan bool) (*etcd
 }
 
 func (msr *mockSubnetRegistry) hasSubnet(sn string) bool {
-	for _, n := range msr.subnets.Nodes {
-		if n.Key == sn {
-			return true
-		}
-	}
-	return false
+	_, ok := msr.subnets[sn]
+	return ok
 }
 
 func TestAcquireLease(t *testing.T) {
 	msr := newMockSubnetRegistry(0)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %s", err)
 	}
@@ -181,7 +168,7 @@ func TestAcquireLease(t *testing.T) {
 
 func TestWatchLeaseAdded(t *testing.T) {
 	msr := newMockSubnetRegistry(0)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %s", err)
 	}
@@ -218,7 +205,7 @@ func TestWatchLeaseAdded(t *testing.T) {
 
 func TestWatchLeaseRemoved(t *testing.T) {
 	msr := newMockSubnetRegistry(0)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %s", err)
 	}
@@ -259,7 +246,7 @@ type leaseData struct {
 
 func TestRenewLease(t *testing.T) {
 	msr := newMockSubnetRegistry(1)
-	sm, err := newSubnetManager(msr)
+	sm, err := NewSubnetManager(msr)
 	if err != nil {
 		t.Fatalf("Failed to create subnet manager: %v", err)
 	}
@@ -292,13 +279,13 @@ func TestRenewLease(t *testing.T) {
 	time.Sleep(2 * time.Second)
 
 	// check that it's still good
-	for _, n := range msr.subnets.Nodes {
-		if n.Key == sn.StringSep(".", "-") {
-			if n.Expiration.Before(time.Now()) {
+	for subnet, v := range msr.subnets {
+		if subnet == sn.StringSep(".", "-") {
+			if v.expiration.Before(time.Now()) {
 				t.Error("Failed to renew lease: expiration did not advance")
 			}
 			a := LeaseAttrs{}
-			if err := json.Unmarshal([]byte(n.Value), &a); err != nil {
+			if err := json.Unmarshal(v.attrs, &a); err != nil {
 				t.Errorf("Failed to JSON-decode LeaseAttrs: %v", err)
 				return
 			}

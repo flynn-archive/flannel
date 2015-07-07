@@ -9,11 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/coreos/flannel/Godeps/_workspace/src/github.com/coreos/go-etcd/etcd"
-	log "github.com/coreos/flannel/Godeps/_workspace/src/github.com/golang/glog"
+	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
 
-	"github.com/coreos/flannel/pkg/ip"
-	"github.com/coreos/flannel/pkg/task"
+	"github.com/flynn/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/task"
 )
 
 const (
@@ -50,7 +49,7 @@ type SubnetLease struct {
 }
 
 type SubnetManager struct {
-	registry  subnetRegistry
+	registry  Registry
 	config    *Config
 	myLease   SubnetLease
 	leaseExp  time.Time
@@ -67,12 +66,23 @@ type Event struct {
 
 type EventBatch []Event
 
-func NewSubnetManager(config *EtcdConfig) (*SubnetManager, error) {
-	esr, err := newEtcdSubnetRegistry(config)
+func NewSubnetManager(r Registry) (*SubnetManager, error) {
+	config, err := r.GetConfig()
 	if err != nil {
 		return nil, err
 	}
-	return newSubnetManager(esr)
+
+	c, err := ParseConfig(config)
+	if err != nil {
+		return nil, err
+	}
+
+	sm := SubnetManager{
+		registry: r,
+		config:   c,
+	}
+
+	return &sm, nil
 }
 
 func (sm *SubnetManager) AcquireLease(attrs *LeaseAttrs, cancel chan bool) (ip.IP4Net, error) {
@@ -124,14 +134,14 @@ func (sm *SubnetManager) tryAcquireLease(extIP ip.IP4, attrs *LeaseAttrs) (ip.IP
 
 	// try to reuse a subnet if there's one that matches our IP
 	if l := findLeaseByIP(sm.leases, extIP); l != nil {
-		resp, err := sm.registry.updateSubnet(l.Network.StringSep(".", "-"), string(attrBytes), subnetTTL)
+		resp, err := sm.registry.UpdateSubnet(l.Network.StringSep(".", "-"), string(attrBytes), subnetTTL)
 		if err != nil {
 			return ip.IP4Net{}, err
 		}
 
 		sm.myLease.Network = l.Network
 		sm.myLease.Attrs = *attrs
-		sm.leaseExp = *resp.Node.Expiration
+		sm.leaseExp = *resp.Expiration
 		return l.Network, nil
 	}
 
@@ -141,16 +151,16 @@ func (sm *SubnetManager) tryAcquireLease(extIP ip.IP4, attrs *LeaseAttrs) (ip.IP
 		return ip.IP4Net{}, err
 	}
 
-	resp, err := sm.registry.createSubnet(sn.StringSep(".", "-"), string(attrBytes), subnetTTL)
+	resp, err := sm.registry.CreateSubnet(sn.StringSep(".", "-"), string(attrBytes), subnetTTL)
 	switch {
 	case err == nil:
 		sm.myLease.Network = sn
 		sm.myLease.Attrs = *attrs
-		sm.leaseExp = *resp.Node.Expiration
+		sm.leaseExp = *resp.Expiration
 		return sn, nil
 
-	// if etcd returned Key Already Exists, try again.
-	case err.(*etcd.EtcdError).ErrorCode == etcdKeyAlreadyExists:
+	case err == ErrSubnetExists:
+		// if subnet already exists, try again.
 		return ip.IP4Net{}, nil
 
 	default:
@@ -194,51 +204,23 @@ func parseSubnetKey(s string) (ip.IP4Net, error) {
 	return ip.IP4Net{}, errors.New("Error parsing IP Subnet")
 }
 
-func newSubnetManager(r subnetRegistry) (*SubnetManager, error) {
-	cfgResp, err := r.getConfig()
-	if err != nil {
-		return nil, err
-	}
-
-	cfg, err := ParseConfig(cfgResp.Node.Value)
-	if err != nil {
-		return nil, err
-	}
-
-	sm := SubnetManager{
-		registry: r,
-		config:   cfg,
-	}
-
-	return &sm, nil
-}
-
 func (sm *SubnetManager) getLeases() ([]SubnetLease, error) {
-	resp, err := sm.registry.getSubnets()
-
+	resp, err := sm.registry.GetSubnets()
+	if err != nil {
+		return nil, err
+	}
 	var leases []SubnetLease
-	switch {
-	case err == nil:
-		for _, node := range resp.Node.Nodes {
-			sn, err := parseSubnetKey(node.Key)
-			if err == nil {
-				var attrs LeaseAttrs
-				if err = json.Unmarshal([]byte(node.Value), &attrs); err == nil {
-					lease := SubnetLease{sn, attrs}
-					leases = append(leases, lease)
-				}
+	for subnet, rawLeaseAttrs := range resp.Subnets {
+		sn, err := parseSubnetKey(subnet)
+		if err == nil {
+			var attrs LeaseAttrs
+			if err = json.Unmarshal(rawLeaseAttrs, &attrs); err == nil {
+				lease := SubnetLease{sn, attrs}
+				leases = append(leases, lease)
 			}
 		}
-		sm.lastIndex = resp.EtcdIndex
-
-	case err.(*etcd.EtcdError).ErrorCode == etcdKeyNotFound:
-		// key not found: treat it as empty set
-		sm.lastIndex = err.(*etcd.EtcdError).Index
-
-	default:
-		return nil, err
 	}
-
+	sm.lastIndex = resp.Index
 	return leases, nil
 }
 
@@ -281,7 +263,7 @@ func (sm *SubnetManager) applyLeases(newLeases []SubnetLease) EventBatch {
 	return batch
 }
 
-func (sm *SubnetManager) applySubnetChange(action string, ipn ip.IP4Net, data string) (Event, error) {
+func (sm *SubnetManager) applySubnetChange(action string, ipn ip.IP4Net, data []byte) (Event, error) {
 	switch action {
 	case "delete", "expire":
 		for i, l := range sm.leases {
@@ -299,7 +281,7 @@ func (sm *SubnetManager) applySubnetChange(action string, ipn ip.IP4Net, data st
 
 	default:
 		var attrs LeaseAttrs
-		err := json.Unmarshal([]byte(data), &attrs)
+		err := json.Unmarshal(data, &attrs)
 		if err != nil {
 			return Event{}, err
 		}
@@ -354,9 +336,9 @@ func (sm *SubnetManager) WatchLeases(receiver chan EventBatch, cancel chan bool)
 	}
 
 	for {
-		resp, err := sm.registry.watchSubnets(sm.lastIndex+1, cancel)
+		resp, err := sm.registry.WatchSubnets(sm.lastIndex+1, cancel)
 
-		// watchSubnets exited by cancel chan being signaled
+		// WatchSubnets exited by cancel chan being signaled
 		if err == nil && resp == nil {
 			return
 		}
@@ -380,30 +362,30 @@ func (sm *SubnetManager) WatchLeases(receiver chan EventBatch, cancel chan bool)
 	}
 }
 
-func (sm *SubnetManager) parseSubnetWatchResponse(resp *etcd.Response) (batch *EventBatch, err error) {
-	sm.lastIndex = resp.Node.ModifiedIndex
+func (sm *SubnetManager) parseSubnetWatchResponse(resp *Response) (batch *EventBatch, err error) {
+	sm.lastIndex = resp.Index
 
-	sn, err := parseSubnetKey(resp.Node.Key)
-	if err != nil {
-		err = fmt.Errorf("Error parsing subnet IP: %s", resp.Node.Key)
-		return
-	}
-
-	// Don't process our own changes
-	if !sm.myLease.Network.Equal(sn) {
-		evt, err := sm.applySubnetChange(resp.Action, sn, resp.Node.Value)
+	for subnet, rawLeaseAttrs := range resp.Subnets {
+		sn, err := parseSubnetKey(subnet)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("Error parsing subnet IP: %s", subnet)
 		}
-		batch = &EventBatch{evt}
+
+		// Don't process our own changes
+		if !sm.myLease.Network.Equal(sn) {
+			evt, err := sm.applySubnetChange(resp.Action, sn, rawLeaseAttrs)
+			if err != nil {
+				return nil, err
+			}
+			batch = &EventBatch{evt}
+		}
 	}
 
 	return
 }
 
 func (sm *SubnetManager) parseSubnetWatchError(err error) (batch *EventBatch, out error) {
-	etcdErr, ok := err.(*etcd.EtcdError)
-	if ok && etcdErr.ErrorCode == etcdEventIndexCleared {
+	if err == ErrEtcdEventIndexCleared {
 		// etcd maintains a history window for events and it's possible to fall behind.
 		// to recover, get the current state and then "diff" against our cache to generate
 		// events for the caller
@@ -436,14 +418,14 @@ func (sm *SubnetManager) LeaseRenewer(cancel chan bool) {
 				continue
 			}
 
-			resp, err := sm.registry.updateSubnet(sm.myLease.Network.StringSep(".", "-"), string(attrBytes), subnetTTL)
+			resp, err := sm.registry.UpdateSubnet(sm.myLease.Network.StringSep(".", "-"), string(attrBytes), subnetTTL)
 			if err != nil {
 				log.Error("Error renewing lease (trying again in 1 min): ", err)
 				dur = time.Minute
 				continue
 			}
 
-			sm.leaseExp = *resp.Node.Expiration
+			sm.leaseExp = *resp.Expiration
 			log.Info("Lease renewed, new expiration: ", sm.leaseExp)
 			dur = sm.leaseExp.Sub(time.Now()) - renewMargin
 

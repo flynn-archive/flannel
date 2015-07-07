@@ -6,10 +6,10 @@ import (
 	"os"
 	"syscall"
 
-	log "github.com/coreos/flannel/Godeps/_workspace/src/github.com/golang/glog"
-	"github.com/coreos/flannel/Godeps/_workspace/src/github.com/vishvananda/netlink"
+	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/vishvananda/netlink"
 
-	"github.com/coreos/flannel/pkg/ip"
+	"github.com/flynn/flannel/pkg/ip"
 )
 
 type vxlanDeviceAttrs struct {

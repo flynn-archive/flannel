@@ -1,6 +1,6 @@
 #!/bin/bash -e
 
-ORG_PATH="github.com/coreos"
+ORG_PATH="github.com/flynn"
 REPO_PATH="${ORG_PATH}/flannel"
 
 if [ ! -h gopath/src/${REPO_PATH} ]; then
