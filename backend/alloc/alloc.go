@@ -22,9 +22,10 @@ func New(sm *subnet.SubnetManager) backend.Backend {
 	}
 }
 
-func (m *AllocBackend) Init(extIface *net.Interface, extIP net.IP, ipMasq bool) (*backend.SubnetDef, error) {
+func (m *AllocBackend) Init(extIface *net.Interface, extIP net.IP, httpPort string, ipMasq bool) (*backend.SubnetDef, error) {
 	attrs := subnet.LeaseAttrs{
 		PublicIP: ip.FromIP(extIP),
+		HTTPPort: httpPort,
 	}
 
 	sn, err := m.sm.AcquireLease(&attrs, m.stop)

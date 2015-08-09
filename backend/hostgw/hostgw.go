@@ -31,13 +31,14 @@ func New(sm *subnet.SubnetManager) backend.Backend {
 	return b
 }
 
-func (rb *HostgwBackend) Init(extIface *net.Interface, extIP net.IP, ipMasq bool) (*backend.SubnetDef, error) {
+func (rb *HostgwBackend) Init(extIface *net.Interface, extIP net.IP, httpPort string, ipMasq bool) (*backend.SubnetDef, error) {
 	rb.extIface = extIface
 	rb.extIP = extIP
 
 	attrs := subnet.LeaseAttrs{
 		PublicIP:    ip.FromIP(extIP),
 		BackendType: "host-gw",
+		HTTPPort:    httpPort,
 	}
 
 	sn, err := rb.sm.AcquireLease(&attrs, rb.stop)
