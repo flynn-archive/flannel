@@ -40,7 +40,7 @@ func New(sm *subnet.SubnetManager, config json.RawMessage) backend.Backend {
 	return vb
 }
 
-func newSubnetAttrs(pubIP net.IP, mac net.HardwareAddr) (*subnet.LeaseAttrs, error) {
+func newSubnetAttrs(pubIP net.IP, httpPort string, mac net.HardwareAddr) (*subnet.LeaseAttrs, error) {
 	data, err := json.Marshal(&vxlanLeaseAttrs{hardwareAddr(mac)})
 	if err != nil {
 		return nil, err
@@ -48,12 +48,13 @@ func newSubnetAttrs(pubIP net.IP, mac net.HardwareAddr) (*subnet.LeaseAttrs, err
 
 	return &subnet.LeaseAttrs{
 		PublicIP:    ip.FromIP(pubIP),
+		HTTPPort:    httpPort,
 		BackendType: "vxlan",
 		BackendData: json.RawMessage(data),
 	}, nil
 }
 
-func (vb *VXLANBackend) Init(extIface *net.Interface, extIP net.IP, ipMasq bool) (*backend.SubnetDef, error) {
+func (vb *VXLANBackend) Init(extIface *net.Interface, extIP net.IP, httpPort string, ipMasq bool) (*backend.SubnetDef, error) {
 	// Parse our configuration
 	if len(vb.rawCfg) > 0 {
 		if err := json.Unmarshal(vb.rawCfg, &vb.cfg); err != nil {
@@ -75,7 +76,7 @@ func (vb *VXLANBackend) Init(extIface *net.Interface, extIP net.IP, ipMasq bool)
 		return nil, err
 	}
 
-	sa, err := newSubnetAttrs(extIP, vb.dev.MACAddr())
+	sa, err := newSubnetAttrs(extIP, httpPort, vb.dev.MACAddr())
 	if err != nil {
 		return nil, err
 	}

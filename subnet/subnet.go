@@ -7,6 +7,7 @@ import (
 	"net"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
@@ -39,6 +40,7 @@ var (
 
 type LeaseAttrs struct {
 	PublicIP    ip.IP4
+	HTTPPort    string
 	BackendType string          `json:",omitempty"`
 	BackendData json.RawMessage `json:",omitempty"`
 }
@@ -51,10 +53,12 @@ type SubnetLease struct {
 type SubnetManager struct {
 	registry  Registry
 	config    *Config
-	myLease   SubnetLease
 	leaseExp  time.Time
 	lastIndex uint64
-	leases    []SubnetLease
+
+	mtx     sync.RWMutex
+	myLease SubnetLease
+	leases  []SubnetLease
 }
 
 type EventType int
@@ -83,6 +87,20 @@ func NewSubnetManager(r Registry) (*SubnetManager, error) {
 	}
 
 	return &sm, nil
+}
+
+func (sm *SubnetManager) Lease() SubnetLease {
+	sm.mtx.RLock()
+	defer sm.mtx.RUnlock()
+	return sm.myLease
+}
+
+func (sm *SubnetManager) Leases() []SubnetLease {
+	sm.mtx.RLock()
+	defer sm.mtx.RUnlock()
+	res := make([]SubnetLease, len(sm.leases))
+	copy(res, sm.leases)
+	return res
 }
 
 func (sm *SubnetManager) AcquireLease(attrs *LeaseAttrs, cancel chan bool) (ip.IP4Net, error) {
@@ -120,6 +138,9 @@ func findLeaseByIP(leases []SubnetLease, pubIP ip.IP4) *SubnetLease {
 }
 
 func (sm *SubnetManager) tryAcquireLease(extIP ip.IP4, attrs *LeaseAttrs) (ip.IP4Net, error) {
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+
 	var err error
 	sm.leases, err = sm.getLeases()
 	if err != nil {
@@ -230,6 +251,9 @@ func deleteLease(l []SubnetLease, i int) []SubnetLease {
 }
 
 func (sm *SubnetManager) applyLeases(newLeases []SubnetLease) EventBatch {
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+
 	var batch EventBatch
 
 	for _, l := range newLeases {
@@ -264,6 +288,9 @@ func (sm *SubnetManager) applyLeases(newLeases []SubnetLease) EventBatch {
 }
 
 func (sm *SubnetManager) applySubnetChange(action string, ipn ip.IP4Net, data []byte) (Event, error) {
+	sm.mtx.Lock()
+	defer sm.mtx.Unlock()
+
 	switch action {
 	case "delete", "expire":
 		for i, l := range sm.leases {
@@ -326,11 +353,13 @@ func (sm *SubnetManager) WatchLeases(receiver chan EventBatch, cancel chan bool)
 	// "catch up" by replaying all the leases we discovered during
 	// AcquireLease
 	var batch EventBatch
+	sm.mtx.RLock()
 	for _, l := range sm.leases {
 		if !sm.myLease.Network.Equal(l.Network) {
 			batch = append(batch, Event{SubnetAdded, l})
 		}
 	}
+	sm.mtx.RUnlock()
 	if len(batch) > 0 {
 		receiver <- batch
 	}
@@ -411,14 +440,18 @@ func (sm *SubnetManager) LeaseRenewer(cancel chan bool) {
 
 		select {
 		case <-time.After(dur):
+			sm.mtx.RLock()
 			attrBytes, err := json.Marshal(&sm.myLease.Attrs)
+			sm.mtx.RUnlock()
 			if err != nil {
 				log.Error("Error renewing lease (trying again in 1 min): ", err)
 				dur = time.Minute
 				continue
 			}
 
+			sm.mtx.RLock()
 			resp, err := sm.registry.UpdateSubnet(sm.myLease.Network.StringSep(".", "-"), string(attrBytes), subnetTTL)
+			sm.mtx.RUnlock()
 			if err != nil {
 				log.Error("Error renewing lease (trying again in 1 min): ", err)
 				dur = time.Minute

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -11,11 +12,13 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
 	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/coreos/go-systemd/daemon"
 	disc "github.com/flynn/flannel/Godeps/_workspace/src/github.com/flynn/flynn/discoverd/client"
+	"github.com/flynn/flannel/Godeps/_workspace/src/github.com/flynn/flynn/pkg/status"
 	log "github.com/flynn/flannel/Godeps/_workspace/src/github.com/golang/glog"
 
 	"github.com/flynn/flannel/backend"
@@ -42,6 +45,7 @@ type CmdLineOpts struct {
 	iface         string
 	notifyURL     string
 	discoverdURL  string
+	httpPort      string
 }
 
 var opts CmdLineOpts
@@ -56,6 +60,7 @@ func init() {
 	flag.StringVar(&opts.notifyURL, "notify-url", "", "URL to send webhook after starting")
 	flag.StringVar(&opts.discoverdURL, "discoverd-url", "", "URL of discoverd registry")
 	flag.StringVar(&opts.iface, "iface", "", "interface to use (IP or name) for inter-host communication")
+	flag.StringVar(&opts.httpPort, "http-port", "5001", "port to listen for HTTP requests on allocated IP")
 	flag.BoolVar(&opts.ipMasq, "ip-masq", false, "setup IP masquerade rule for traffic destined outside of overlay network")
 	flag.BoolVar(&opts.help, "help", false, "print this message")
 	flag.BoolVar(&opts.version, "version", false, "print version and exit")
@@ -199,7 +204,7 @@ func makeSubnetManager() *subnet.SubnetManager {
 	}
 }
 
-func newBackend() (backend.Backend, error) {
+func newBackend() (backend.Backend, *subnet.SubnetManager, error) {
 	sm := makeSubnetManager()
 	config := sm.GetConfig()
 
@@ -211,25 +216,93 @@ func newBackend() (backend.Backend, error) {
 		bt.Type = "udp"
 	} else {
 		if err := json.Unmarshal(config.Backend, &bt); err != nil {
-			return nil, fmt.Errorf("Error decoding Backend property of config: %v", err)
+			return nil, nil, fmt.Errorf("Error decoding Backend property of config: %v", err)
 		}
 	}
 
 	switch strings.ToLower(bt.Type) {
 	case "udp":
-		return udp.New(sm, config.Backend), nil
+		return udp.New(sm, config.Backend), sm, nil
 	case "alloc":
-		return alloc.New(sm), nil
+		return alloc.New(sm), sm, nil
 	case "host-gw":
-		return hostgw.New(sm), nil
+		return hostgw.New(sm), sm, nil
 	case "vxlan":
-		return vxlan.New(sm, config.Backend), nil
+		return vxlan.New(sm, config.Backend), sm, nil
 	default:
-		return nil, fmt.Errorf("'%v': unknown backend type", bt.Type)
+		return nil, nil, fmt.Errorf("'%v': unknown backend type", bt.Type)
 	}
 }
 
-func run(be backend.Backend, exit chan int) {
+func httpServer(sn *subnet.SubnetManager, port string) error {
+	l, err := net.Listen("tcp", net.JoinHostPort(sn.Lease().Network.IP.String(), port))
+	if err != nil {
+		return err
+	}
+	http.HandleFunc("/ping", func(http.ResponseWriter, *http.Request) {})
+	status.AddHandler(status.SimpleHandler(func() error {
+		return pingLeases(sn.Leases())
+	}))
+	go http.Serve(l, nil)
+	return nil
+}
+
+// ping neighbor leases five at a time, timeout 1 second, returning as soon as
+// one returns success.
+func pingLeases(leases []subnet.SubnetLease) error {
+	const workers = 5
+	const timeout = 1 * time.Second
+
+	if len(leases) == 0 {
+		return nil
+	}
+
+	work := make(chan subnet.SubnetLease)
+	results := make(chan bool, workers)
+	client := http.Client{Timeout: timeout}
+
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			for l := range work {
+				res, err := client.Get(fmt.Sprintf("http://%s:%s/ping", l.Network.IP, l.Attrs.HTTPPort))
+				if err == nil {
+					res.Body.Close()
+				}
+				results <- err == nil && res.StatusCode == 200
+			}
+			wg.Done()
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(results)
+	}()
+
+	for _, l := range leases {
+		select {
+		case work <- l:
+		case success := <-results:
+			if success {
+				close(work)
+				return nil
+			}
+		}
+	}
+	close(work)
+
+	for success := range results {
+		if success {
+			return nil
+		}
+	}
+
+	return errors.New("failed to successfully ping a neighbor")
+}
+
+func run(be backend.Backend, sm *subnet.SubnetManager, exit chan int) {
 	var err error
 	defer func() {
 		if err == nil || err == task.ErrCanceled {
@@ -252,7 +325,7 @@ func run(be backend.Backend, exit chan int) {
 
 	log.Infof("Using %s as external interface", ipaddr)
 
-	sn, err := be.Init(iface, ipaddr, opts.ipMasq)
+	sn, err := be.Init(iface, ipaddr, opts.httpPort, opts.ipMasq)
 	if err != nil {
 		return
 	}
@@ -260,6 +333,11 @@ func run(be backend.Backend, exit chan int) {
 	writeSubnetFile(sn)
 	notifyWebhook(sn)
 	daemon.SdNotify("READY=1")
+
+	if err = httpServer(sm, opts.httpPort); err != nil {
+		err = fmt.Errorf("error starting HTTP server: %s", err)
+		return
+	}
 
 	log.Infof("%s mode initialized", be.Name())
 	be.Run()
@@ -286,7 +364,7 @@ func main() {
 
 	flagsFromEnv("FLANNELD", flag.CommandLine)
 
-	be, err := newBackend()
+	be, sm, err := newBackend()
 	if err != nil {
 		log.Info(err)
 		os.Exit(1)
@@ -298,7 +376,7 @@ func main() {
 	signal.Notify(sigs, os.Interrupt, syscall.SIGTERM)
 
 	exit := make(chan int)
-	go run(be, exit)
+	go run(be, sm, exit)
 
 	for {
 		select {

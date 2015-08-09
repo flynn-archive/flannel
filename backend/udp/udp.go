@@ -49,7 +49,7 @@ func New(sm *subnet.SubnetManager, config json.RawMessage) backend.Backend {
 	return &be
 }
 
-func (m *UdpBackend) Init(extIface *net.Interface, extIP net.IP, ipMasq bool) (*backend.SubnetDef, error) {
+func (m *UdpBackend) Init(extIface *net.Interface, extIP net.IP, httpPort string, ipMasq bool) (*backend.SubnetDef, error) {
 	// Parse our configuration
 	if len(m.rawCfg) > 0 {
 		if err := json.Unmarshal(m.rawCfg, &m.cfg); err != nil {
@@ -60,6 +60,7 @@ func (m *UdpBackend) Init(extIface *net.Interface, extIP net.IP, ipMasq bool) (*
 	// Acquire the lease form subnet manager
 	attrs := subnet.LeaseAttrs{
 		PublicIP: ip.FromIP(extIP),
+		HTTPPort: httpPort,
 	}
 
 	sn, err := m.sm.AcquireLease(&attrs, m.stop)
