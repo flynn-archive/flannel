@@ -91,7 +91,8 @@ func flagsFromEnv(prefix string, fs *flag.FlagSet) {
 func writeSubnetFile(sn *backend.SubnetDef) error {
 	// Write out the first usable IP by incrementing
 	// sn.IP by one
-	sn.Net.IP += 1
+	net := sn.Net
+	net.IP += 1
 
 	dir, name := filepath.Split(opts.subnetFile)
 	os.MkdirAll(dir, 0755)
@@ -102,7 +103,7 @@ func writeSubnetFile(sn *backend.SubnetDef) error {
 		return err
 	}
 
-	fmt.Fprintf(f, "FLANNEL_SUBNET=%s\n", sn.Net)
+	fmt.Fprintf(f, "FLANNEL_SUBNET=%s\n", net)
 	fmt.Fprintf(f, "FLANNEL_MTU=%d\n", sn.MTU)
 	_, err = fmt.Fprintf(f, "FLANNEL_IPMASQ=%v\n", opts.ipMasq)
 	f.Close()
@@ -119,10 +120,12 @@ func notifyWebhook(sn *backend.SubnetDef) error {
 	if opts.notifyURL == "" {
 		return nil
 	}
+	net := sn.Net
+	net.IP += 1
 	data := struct {
 		Subnet string `json:"subnet"`
 		MTU    int    `json:"mtu"`
-	}{sn.Net.String(), sn.MTU}
+	}{net.String(), sn.MTU}
 	payload, _ := json.Marshal(data)
 	res, err := http.Post(opts.notifyURL, "application/json", bytes.NewReader(payload))
 	if err != nil {
