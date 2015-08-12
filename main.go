@@ -237,16 +237,19 @@ func newBackend() (backend.Backend, *subnet.SubnetManager, error) {
 	}
 }
 
-func httpServer(sn *subnet.SubnetManager, port string) error {
-	l, err := net.Listen("tcp", net.JoinHostPort(sn.Lease().Network.IP.String(), port))
+func httpServer(sn *subnet.SubnetManager, publicIP, port string) error {
+	overlayListener, err := net.Listen("tcp", net.JoinHostPort(sn.Lease().Network.IP.String(), port))
 	if err != nil {
 		return err
 	}
+	publicListener, err := net.Listen("tcp", net.JoinHostPort(publicIP, port))
+
 	http.HandleFunc("/ping", func(http.ResponseWriter, *http.Request) {})
 	status.AddHandler(status.SimpleHandler(func() error {
 		return pingLeases(sn.Leases())
 	}))
-	go http.Serve(l, nil)
+	go http.Serve(overlayListener, nil)
+	go http.Serve(publicListener, nil)
 	return nil
 }
 
@@ -337,7 +340,7 @@ func run(be backend.Backend, sm *subnet.SubnetManager, exit chan int) {
 	notifyWebhook(sn)
 	daemon.SdNotify("READY=1")
 
-	if err = httpServer(sm, opts.httpPort); err != nil {
+	if err = httpServer(sm, ipaddr.String(), opts.httpPort); err != nil {
 		err = fmt.Errorf("error starting HTTP server: %s", err)
 		return
 	}
