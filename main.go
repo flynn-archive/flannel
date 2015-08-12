@@ -344,6 +344,9 @@ func run(be backend.Backend, sm *subnet.SubnetManager, exit chan int) {
 		err = fmt.Errorf("error starting HTTP server: %s", err)
 		return
 	}
+	if opts.discoverdURL != "" {
+		disc.NewClientWithURL(opts.discoverdURL).AddServiceAndRegister("flannel", net.JoinHostPort(ipaddr.String(), opts.httpPort))
+	}
 
 	log.Infof("%s mode initialized", be.Name())
 	be.Run()
