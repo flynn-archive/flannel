@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/flynn/flannel",
-	"GoVersion": "go1.4.2",
+	"GoVersion": "go1.5",
 	"Packages": [
 		"./..."
 	],
@@ -17,63 +17,63 @@
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/discoverd/client",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/discoverd/testutil",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/attempt",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/cors",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/ctxhelper",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/dialer",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/httpclient",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/httphelper",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/random",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/sse",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/status",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/flynn/pkg/stream",
-			"Comment": "v20150807.0-13-gc5b7be8",
-			"Rev": "c5b7be8500043b934c37bbbcf13aa21c43d7c620"
+			"Comment": "v20150814.0-28-gde1b044",
+			"Rev": "de1b044fbfb58266fc428a6c2013cc02522fcc58"
 		},
 		{
 			"ImportPath": "github.com/flynn/go-sql",
