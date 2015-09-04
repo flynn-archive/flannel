@@ -24,7 +24,6 @@ import (
 	"github.com/flynn/flannel/backend"
 	"github.com/flynn/flannel/backend/alloc"
 	"github.com/flynn/flannel/backend/hostgw"
-	"github.com/flynn/flannel/backend/udp"
 	"github.com/flynn/flannel/backend/vxlan"
 	"github.com/flynn/flannel/discoverd"
 	"github.com/flynn/flannel/pkg/ip"
@@ -215,17 +214,11 @@ func newBackend() (backend.Backend, *subnet.SubnetManager, error) {
 		Type string
 	}
 
-	if len(config.Backend) == 0 {
-		bt.Type = "udp"
-	} else {
-		if err := json.Unmarshal(config.Backend, &bt); err != nil {
-			return nil, nil, fmt.Errorf("Error decoding Backend property of config: %v", err)
-		}
+	if err := json.Unmarshal(config.Backend, &bt); err != nil {
+		return nil, nil, fmt.Errorf("Error decoding Backend property of config: %v", err)
 	}
 
 	switch strings.ToLower(bt.Type) {
-	case "udp":
-		return udp.New(sm, config.Backend), sm, nil
 	case "alloc":
 		return alloc.New(sm), sm, nil
 	case "host-gw":
